@@ -48,6 +48,21 @@ app.post('/games', (req, res) => {
         .send(game)
 })
 
+app.put('/games/:id', (req, res) => {
+    const game = games.find(g => g.id == req.params.id)
+    if (typeof game === 'undefined') {
+        return res.status(404).send({error: "Game not found"})
+    }
+    if (!req.body || !req.body.name || !req.body.price) {
+        return res.status(400).send({ error: 'One or all params are missing' })
+    }
+
+    game.name = req.body.name
+    game.price = req.body.price
+
+    res.send(game)
+})
+
 app.delete('/games/:id', (req, res) => {
     const index = games.findIndex(g => g.id == req.params.id)
     if (index === -1) {
