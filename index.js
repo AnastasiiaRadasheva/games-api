@@ -23,19 +23,34 @@ const users = [
     {username: "user", password: "user123", role: "user"}
 ]
 
-function requireAdmin(req, res, next) {
+function findUser(req) {
     const auth = (req.headers.authorization || '').replace('Basic ', '')
     const [username, password] = Buffer.from(auth, 'base64').toString().split(':')
 
-    const user = users.find(u => u.username === username && u.password === password)
-    if (typeof user === 'undefined') {
+    return users.find(u => u.username == username && u.password == password)
+}
+
+function requireLogin(req, res, next) {
+    if (typeof findUser(req) == 'undefined') {
         return res.status(401).send({error: "Wrong username or password"})
     }
-    if (user.role !== 'admin') {
+    next()
+}
+
+function requireAdmin(req, res, next) {
+    const user = findUser(req)
+    if (typeof user == 'undefined') {
+        return res.status(401).send({error: "Wrong username or password"})
+    }
+    if (user.role != 'admin') {
         return res.status(403).send({error: "Only admin can do this"})
     }
     next()
 }
+
+app.get('/login', requireLogin, (req, res) => {
+    res.send({message: "OK"})
+})
 
 app.get('/games', (req, res) => {
     res.send(games)
@@ -50,9 +65,12 @@ app.get('/games/:id', (req, res) => {
     res.send(game)
 })
 
-app.post('/games', requireAdmin, (req, res) => {
+app.post('/games', requireLogin, (req, res) => {
     if (!req.body || !req.body.name || !req.body.price) {
         return res.status(400).send({ error: 'One or all params are missing' })
+    }
+    if (games.find(g => g.name == req.body.name)) {
+        return res.status(400).send({ error: 'Game with this name already exists' })
     }
     let game = {
         id: Math.max(0, ...games.map(g => g.id)) + 1,
@@ -100,22 +118,45 @@ const swaggerCss = `
     .swagger-ui .scheme-container .auth-wrapper { pointer-events: auto }
 `
 
-// Hides POST/PUT/DELETE in Swagger until you log in as admin
-function hideAdminOperations() {
+function hideAdminOperations(system) {
+    const canSee = (method) => {
+        const username = system.authSelectors.authorized().getIn(['basicAuth', 'value', 'username'])
+        if (username == 'admin') return true
+        if (username) return method == 'get' || method == 'post'
+        return method == 'get'
+    }
+
     return {
         statePlugins: {
-            spec: {
-                wrapSelectors: {
-                    taggedOperations: (original, system) => (...args) => {
-                        const username = system.getSystem().authSelectors.authorized().getIn(['basicAuth', 'value', 'username'])
-                        if (username === 'admin') {
-                            return original(...args)
-                        }
-                        return original(...args)
-                            .map(tag => tag.set('operations', tag.get('operations').filter(op => op.get('method') === 'get')))
-                            .filter(tag => tag.get('operations').size > 0)
+            auth: {
+                wrapActions: {
+                    authorize: (oriAction) => (payload) => {
+                        const {username, password} = payload.basicAuth.value
+                        fetch('/login', {headers: {Authorization: 'Basic ' + btoa(username + ':' + password)}})
+                            .then(res => {
+                                if (res.ok) {
+                                    oriAction(payload)
+                                } else {
+                                    alert('Wrong username or password')
+                                }
+                            })
+                            .catch(() => alert('Server is not available'))
                     }
                 }
+            }
+        },
+        wrapComponents: {
+            operation: (Original, system) => (props) => {
+                if (canSee(props.operation.get('method'))) {
+                    return system.React.createElement(Original, props)
+                }
+                return null
+            },
+            OperationTag: (Original, system) => (props) => {
+                if (props.tagObj.get('operations').some(op => canSee(op.get('method')))) {
+                    return system.React.createElement(Original, props)
+                }
+                return null
             }
         }
     }
