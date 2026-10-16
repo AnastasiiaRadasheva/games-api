@@ -127,10 +127,11 @@ const swaggerCss = `
 function hideAdminOperations(system) {
     // Kas seda päringut (meetodit) tohib näidata?
     const canSee = (method) => {
+        // Kasutajanimi, mis sisestati Authorize aknas (kui keegi pole sisse loginud, siis undefined)
         const username = system.authSelectors.authorized().getIn(['basicAuth', 'value', 'username'])
-        if (username == 'admin') return true
-        if (username) return method == 'get' || method == 'post'
-        return method == 'get'
+        if (username == 'admin') return true //admin näeb kõike
+        if (username) return method == 'get' || method == 'post' //sisse loginud kasutaja: vaatamine ja lisamine
+        return method == 'get' //sisse logimata: ainult vaatamine
     }
 
     return {
@@ -139,28 +140,31 @@ function hideAdminOperations(system) {
             auth: {
                 wrapActions: {
                     authorize: (oriAction) => (payload) => {
-                        const {username, password} = payload.basicAuth.value
+                        const {username, password} = payload.basicAuth.value //Authorize aknas sisestatud andmed
+                        //saadame need serverisse /login (btoa kodeerib "kasutaja:parool" base64-ks)
                         fetch('/login', {headers: {Authorization: 'Basic ' + btoa(username + ':' + password)}})
                             .then(res => {
                                 if (res.ok) {
-                                    oriAction(payload)
+                                    oriAction(payload) //andmed on õiged, Swagger jätab sisselogimise meelde
                                 } else {
-                                    alert('Wrong username or password')
+                                    alert('Wrong username or password') //kui kasutajanimi või parool ei ole õige
                                 }
                             })
-                            .catch(() => alert('Server is not available'))
+                            .catch(() => alert('Server is not available')) //püüab vigu, näiteks kui server ei tööta
                     }
                 }
             }
         },
         // Ei näita päringuid ja jaotisi, mida kasutaja näha ei tohi
         wrapComponents: {
+            //üks päring (nt GET /games)
             operation: (Original, system) => (props) => {
                 if (canSee(props.operation.get('method'))) {
-                    return system.React.createElement(Original, props)
+                    return system.React.createElement(Original, props) //tohib näha: näitame nagu tavaliselt
                 }
-                return null
+                return null //ei tohi näha: ei näita midagi
             },
+            //jaotis (nt games, new-game), peidame, kui selles pole ühtegi lubatud päringut
             OperationTag: (Original, system) => (props) => {
                 if (props.tagObj.get('operations').some(op => canSee(op.get('method')))) {
                     return system.React.createElement(Original, props)
