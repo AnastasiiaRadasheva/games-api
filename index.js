@@ -18,6 +18,25 @@ const games = [
     {id: 8, name: "Forza Horizon 5", price: 59.99}
 ]
 
+const users = [
+    {username: "admin", password: "admin123", role: "admin"},
+    {username: "user", password: "user123", role: "user"}
+]
+
+function requireAdmin(req, res, next) {
+    const auth = (req.headers.authorization || '').replace('Basic ', '')
+    const [username, password] = Buffer.from(auth, 'base64').toString().split(':')
+
+    const user = users.find(u => u.username === username && u.password === password)
+    if (typeof user === 'undefined') {
+        return res.status(401).send({error: "Wrong username or password"})
+    }
+    if (user.role !== 'admin') {
+        return res.status(403).send({error: "Only admin can do this"})
+    }
+    next()
+}
+
 app.get('/games', (req, res) => {
     res.send(games)
 })
@@ -31,7 +50,7 @@ app.get('/games/:id', (req, res) => {
     res.send(game)
 })
 
-app.post('/games', (req, res) => {
+app.post('/games', requireAdmin, (req, res) => {
     if (!req.body || !req.body.name || !req.body.price) {
         return res.status(400).send({ error: 'One or all params are missing' })
     }
@@ -48,7 +67,7 @@ app.post('/games', (req, res) => {
         .send(game)
 })
 
-app.put('/games/:id', (req, res) => {
+app.put('/games/:id', requireAdmin, (req, res) => {
     const game = games.find(g => g.id == req.params.id)
     if (typeof game === 'undefined') {
         return res.status(404).send({error: "Game not found"})
@@ -63,7 +82,7 @@ app.put('/games/:id', (req, res) => {
     res.send(game)
 })
 
-app.delete('/games/:id', (req, res) => {
+app.delete('/games/:id', requireAdmin, (req, res) => {
     const index = games.findIndex(g => g.id == req.params.id)
     if (index === -1) {
         return res.status(404).send({error: "Game not found"})
@@ -74,7 +93,38 @@ app.delete('/games/:id', (req, res) => {
     res.status(204).send({error: "No content"})
 })
 
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
+const swaggerCss = `
+    .dark-mode-toggle, .swagger-ui .authorization__btn { display: none !important }
+    .swagger-ui > div { position: relative }
+    .swagger-ui .scheme-container { position: absolute; top: 5px; left: 0; right: 0; margin: 0; padding: 0; background: none !important; box-shadow: none !important; pointer-events: none }
+    .swagger-ui .scheme-container .auth-wrapper { pointer-events: auto }
+`
+
+// Hides POST/PUT/DELETE in Swagger until you log in as admin
+function hideAdminOperations() {
+    return {
+        statePlugins: {
+            spec: {
+                wrapSelectors: {
+                    taggedOperations: (original, system) => (...args) => {
+                        const username = system.getSystem().authSelectors.authorized().getIn(['basicAuth', 'value', 'username'])
+                        if (username === 'admin') {
+                            return original(...args)
+                        }
+                        return original(...args)
+                            .map(tag => tag.set('operations', tag.get('operations').filter(op => op.get('method') === 'get')))
+                            .filter(tag => tag.get('operations').size > 0)
+                    }
+                }
+            }
+        }
+    }
+}
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+    customCss: swaggerCss,
+    swaggerOptions: {plugins: [hideAdminOperations]}
+}))
 
 app.listen(port, () => {
     console.log(`API up at: http://localhost:${port}`)
