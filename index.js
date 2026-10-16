@@ -18,11 +18,13 @@ const games = [
     {id: 8, name: "Forza Horizon 5", price: 59.99}
 ]
 
+// Kasutajad: admin võib kõike teha, user võib vaadata ja lisada
 const users = [
     {username: "admin", password: "admin123", role: "admin"},
     {username: "user", password: "user123", role: "user"}
 ]
 
+// Võtab päisest Authorization kasutajanime ja parooli ning otsib kasutaja
 function findUser(req) {
     const auth = (req.headers.authorization || '').replace('Basic ', '')
     const [username, password] = Buffer.from(auth, 'base64').toString().split(':')
@@ -30,6 +32,7 @@ function findUser(req) {
     return users.find(u => u.username == username && u.password == password)
 }
 
+// Lubab edasi ainult sisse logitud kasutaja
 function requireLogin(req, res, next) {
     if (typeof findUser(req) == 'undefined') {
         return res.status(401).send({error: "Wrong username or password"})
@@ -37,6 +40,7 @@ function requireLogin(req, res, next) {
     next()
 }
 
+// Lubab edasi ainult admini
 function requireAdmin(req, res, next) {
     const user = findUser(req)
     if (typeof user == 'undefined') {
@@ -48,6 +52,7 @@ function requireAdmin(req, res, next) {
     next()
 }
 
+// Kontrollib kasutajanime ja parooli (Swaggeri Authorize nupp kasutab seda)
 app.get('/login', requireLogin, (req, res) => {
     res.send({message: "OK"})
 })
@@ -118,7 +123,9 @@ const swaggerCss = `
     .swagger-ui .scheme-container .auth-wrapper { pointer-events: auto }
 `
 
+// Swaggeri plugin: peidab päringud, mida kasutaja teha ei tohi
 function hideAdminOperations(system) {
+    // Kas seda päringut (meetodit) tohib näidata?
     const canSee = (method) => {
         const username = system.authSelectors.authorized().getIn(['basicAuth', 'value', 'username'])
         if (username == 'admin') return true
@@ -127,6 +134,7 @@ function hideAdminOperations(system) {
     }
 
     return {
+        // Authorize nupp: enne sisselogimist kontrollime serverist, kas parool on õige
         statePlugins: {
             auth: {
                 wrapActions: {
@@ -145,6 +153,7 @@ function hideAdminOperations(system) {
                 }
             }
         },
+        // Ei näita päringuid ja jaotisi, mida kasutaja näha ei tohi
         wrapComponents: {
             operation: (Original, system) => (props) => {
                 if (canSee(props.operation.get('method'))) {
