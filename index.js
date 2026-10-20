@@ -72,7 +72,9 @@ function requireAdmin(req, res, next) {
     next()
 }
 
-// Kontrollib kasutajanime ja parooli (Swaggeri Authorize nupp kasutab seda)
+
+// Kontrollib kasutajanime ja parooli
+// (Swaggeri Authorize nupp kasutab seda)
 app.get('/login', requireLogin, (req, res) => {
     res.send({message: "OK"})
 })
