@@ -1,3 +1,5 @@
+require('dotenv').config()
+const mongoose = require('mongoose')
 const express = require('express')
 const app = express()
 const port = 8080
@@ -17,6 +19,24 @@ const games = [
     {id: 7, name: "Valorant", price: 0},
     {id: 8, name: "Forza Horizon 5", price: 59.99}
 ]
+
+// Andmebaas: mäng koosneb id, name ja price väljadest
+const Game = mongoose.model('Game', new mongoose.Schema({id: Number, name: String, price: Number}))
+
+// Salvestab kogu games massiivi andmebaasi
+async function saveGames() {
+    await Game.deleteMany({})
+    await Game.insertMany(games)
+}
+
+// Kasutajad andmebaasis: username, password ja role
+const User = mongoose.model('User', new mongoose.Schema({username: String, password: String, role: String}))
+
+// Salvestab kogu users massiivi andmebaasi
+async function saveUsers() {
+    await User.deleteMany({})
+    await User.insertMany(users)
+}
 
 // Kasutajad: admin võib kõike teha, user võib vaadata ja lisada
 const users = [
@@ -84,6 +104,7 @@ app.post('/games', requireLogin, (req, res) => {
     }
 
     games.push(game)
+    saveGames()
 
     res.status(201)
         .location(`${getBaseUrl(req)}/games/${game.id}`)
@@ -101,6 +122,7 @@ app.put('/games/:id', requireAdmin, (req, res) => {
 
     game.name = req.body.name
     game.price = req.body.price
+    saveGames()
 
     res.send(game)
 })
@@ -112,6 +134,7 @@ app.delete('/games/:id', requireAdmin, (req, res) => {
     }
 
     games.splice(index, 1)
+    saveGames()
 
     res.status(204).send({error: "No content"})
 })
@@ -179,6 +202,19 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
     customCss: swaggerCss,
     swaggerOptions: {plugins: [hideAdminOperations]}
 }))
+
+// Ühendab andmebaasiga ja võtab sealt mängud (kui baas on tühi, salvestab sinna algsed mängud)
+mongoose.connect(process.env.MONGO_URI).then(async () => {
+    console.log('Connected to MongoDB')
+    const fromDb = await Game.find({}, {_id: 0, __v: 0}).lean()
+    if (fromDb.length == 0) await saveGames()
+    else games.splice(0, games.length, ...fromDb)
+
+    // sama kasutajatega
+    const usersFromDb = await User.find({}, {_id: 0, __v: 0}).lean()
+    if (usersFromDb.length == 0) await saveUsers()
+    else users.splice(0, users.length, ...usersFromDb)
+})
 
 app.listen(port, () => {
     console.log(`API up at: http://localhost:${port}`)
